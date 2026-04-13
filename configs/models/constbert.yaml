@@ -1,0 +1,4 @@
+model:
+  pretrained_model: bert-base-uncased
+  dim: 128
+  doc_maxlen: 32

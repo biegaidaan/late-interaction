@@ -1,0 +1,3 @@
+model:
+  pretrained_model: bert-base-uncased
+  dim: 128

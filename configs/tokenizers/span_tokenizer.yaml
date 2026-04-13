@@ -1,0 +1,7 @@
+tokenizer:
+  pretrained_model: bert-base-uncased
+  qry_maxlen: 32
+  doc_maxlen: 256
+  use_prefix: true
+  qry_span_size: 4
+  doc_span_size: 4
