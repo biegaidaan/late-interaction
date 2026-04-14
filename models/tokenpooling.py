@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,14 +13,19 @@ from .utils import mv_score
 
 @registry.register_model_name("tokenpooling")
 class TokenPooling(BaseModel, BaseEncoder):
-    def __init__(self, pretrained_model: str, dim: int, pooling_factor: int) -> None:
+    def __init__(self, pretrained_model: str, dim: int, pooling_factor: int, temperature: float = 1.0) -> None:
         super().__init__()
         self.llm = AutoModel.from_pretrained(pretrained_model)
         self.proj = nn.Linear(self.llm.config.hidden_size, dim)
+        self.log_temperature = nn.Parameter(torch.tensor(math.log(temperature)))
 
         self.pooling_factor = pooling_factor
 
         self._init_weights()
+
+    @property
+    def temperature(self) -> torch.Tensor:
+        return self.log_temperature.exp().clamp(min=0.01, max=0.1)
 
     def _init_weights(self) -> None:
         nn.init.xavier_uniform_(self.proj.weight)
@@ -120,5 +127,6 @@ class TokenPooling(BaseModel, BaseEncoder):
         pretrained_model = config.get("pretrained_model", "bert-base-uncased")
         dim = config.get("dim", 128)
         pooling_factor = config.get("pooling_factor", 4)
+        temperature = config.get("temperature", 1.0)
 
-        return cls(pretrained_model, dim, pooling_factor)
+        return cls(pretrained_model, dim, pooling_factor, temperature)
