@@ -10,7 +10,7 @@ from encode import StrideTensor
 from common import registry
 
 # Import to trigger @registry.register_* decorators
-import models.colbert, models.constbert, models.msbert, models.tokenpooling  # noqa: F401
+import models.colbert, models.constbert, models.msbert, models.tokenpooling, models.colbertv2  # noqa: F401
 
 
 def parse_args():
