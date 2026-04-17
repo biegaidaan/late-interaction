@@ -10,7 +10,7 @@ from encode import StrideTensor
 from common import registry
 
 # Import to trigger @registry.register_* decorators
-import models.colbert, models.constbert, models.msbert, models.tokenpooling, models.colbertv2  # noqa: F401
+from models import *
 
 
 def parse_args():
@@ -101,7 +101,7 @@ def retrieve(
     return results
 
 
-if  __name__ == "__main__":
+if __name__ == "__main__":
     args = parse_args()
     config = OmegaConf.load(args.config_path)
 
