@@ -2,7 +2,8 @@ class Registry:
     mapping = {
         "model_name_mapping": {},
         "tokenizer_name_mapping": {},
-        "lr_scheduler_name_mapping": {}
+        "lr_scheduler_name_mapping": {},
+        "scorer_name_mapping": {}
     }
 
     @classmethod
@@ -40,7 +41,7 @@ class Registry:
         return warp
 
     @classmethod
-    def register_lr_scheduler(cls, name):
+    def register_lr_scheduler(cls, name: str):
         def wrap(lr_scheduler_func):
             if name in cls.mapping["lr_scheduler_name_mapping"]:
                 raise KeyError(
@@ -50,6 +51,20 @@ class Registry:
                 )
             cls.mapping["lr_scheduler_name_mapping"][name] = lr_scheduler_func
             return lr_scheduler_func
+
+        return wrap
+
+    @classmethod
+    def register_scorer(cls, name: str):
+        def wrap(score_func):
+            if name in cls.mapping["scorer_name_mapping"]:
+                raise KeyError(
+                    "Name '{}' already registered for {}.".format(
+                        name, cls.mapping["scorer_name_mapping"][name]
+                    )
+                )
+            cls.mapping["scorer_name_mapping"][name] = score_func
+            return score_func
 
         return wrap
 
@@ -64,6 +79,10 @@ class Registry:
     @classmethod
     def get_lr_scheduler_func(cls, name: str):
         return cls.mapping["lr_scheduler_name_mapping"].get(name, None)
+
+    @classmethod
+    def get_scorer(cls, name: str):
+        return cls.mapping["scorer_name_mapping"].get(name, None)
 
 
 registry = Registry()

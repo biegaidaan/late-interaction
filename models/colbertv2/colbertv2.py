@@ -5,24 +5,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel
 
+import scorer  # register scorer functions
 from common.registry import registry
-from .base_model import BaseModel, BaseEncoder
-from .utils import mv_score
+from models.base_model import BaseModel, BaseEncoder
 
 
-@registry.register_model_name("colbert")
-class ColBERT(BaseModel, BaseEncoder):
-    def __init__(self, pretrained_model: str, dim: int, temperature: float = 1.0) -> None:
+@registry.register_model_name("colbertv2")
+class ColBERTv2(BaseModel, BaseEncoder):
+    def __init__(self, pretrained_model: str, dim: int, temperature: float = 1.0, topk: int = 32) -> None:
         super().__init__()
         self.llm = AutoModel.from_pretrained(pretrained_model)
         self.proj = nn.Linear(self.llm.config.hidden_size, dim)
         self.log_temperature = nn.Parameter(torch.tensor(math.log(temperature)))
+        self.topk = topk
 
         self._init_weights()
 
     @property
     def temperature(self) -> torch.Tensor:
-        return self.log_temperature.exp().clamp(min=0.01, max=0.1)
+        return self.log_temperature.exp().clamp(min=0.01, max=0.5)
 
     def _init_weights(self) -> None:
         nn.init.xavier_uniform_(self.proj.weight)
@@ -46,27 +47,20 @@ class ColBERT(BaseModel, BaseEncoder):
     def encode_doc(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> dict[str, torch.Tensor]:
         return self.encode(input_ids, attention_mask)
 
-    @staticmethod
-    def score(qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
-        P = mv_score(qry_repr["mv_repr"], doc_repr["mv_repr"], pairwise)
-        scores = P.max(dim=-1).values.sum(-1)
-
-        if "mv_mask" in qry_repr:
-            scores = scores / qry_repr["mv_mask"].sum(-1, keepdim=True)
-
-        return scores
+    def score(self, qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
+        return registry.get_scorer("soft_maxsim_sum")(qry_repr, doc_repr, pairwise=pairwise, topk=self.topk, temperature=self.temperature)
 
     def forward(self, Q: tuple[torch.Tensor], D: tuple[torch.Tensor]) -> torch.Tensor:
         Q = self.encode_qry(*Q)
         D = self.encode_doc(*D)
 
-        # default to in-negative sampling, so pairwise=False
-        return ColBERT.score(Q, D, False)
+        return self.score(Q, D, False)
 
     @classmethod
     def from_config(cls, config):
         pretrained_model = config.get("pretrained_model", "bert-base-uncased")
         dim = config.get("dim", 128)
         temperature = config.get("temperature", 1.0)
+        topk = config.get("topk", 32)
 
-        return cls(pretrained_model, dim, temperature)
+        return cls(pretrained_model, dim, temperature, topk)

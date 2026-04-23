@@ -6,9 +6,9 @@ import torch.nn.functional as F
 from transformers import AutoModel
 from scipy.cluster.hierarchy import linkage, fcluster
 
+import scorer  # register scorer functions
 from common.registry import registry
-from .base_model import BaseModel, BaseEncoder
-from .utils import mv_score
+from models.base_model import BaseModel, BaseEncoder
 
 
 @registry.register_model_name("tokenpooling")
@@ -58,10 +58,10 @@ class TokenPooling(BaseModel, BaseEncoder):
             # for idx, cluster_id in enumerate(actual_clusters):
             #     cluster_indices = np.where(labels == cluster_id)
             #     cluster_mean = doc_vecs[cluster_indices].mean(axis=0)
-                
+
             #     vec_tensor = torch.from_numpy(cluster_mean).to(tok_repr.device, dtype=tok_repr.dtype)
             #     vec_tensor = F.normalize(vec_tensor, p=2, dim=-1)
-                
+
             #     padded_repr[b, idx, :] = vec_tensor
             #     padded_mask[b, idx] = 1
 
@@ -74,12 +74,13 @@ class TokenPooling(BaseModel, BaseEncoder):
             cluster_sums.index_add_(0, labels_tensor, tok_repr[b, :v_len, :])
 
             counts = torch.bincount(labels_tensor).type_as(tok_repr).view(-1, 1)
+            actual_k = counts.size(0)
 
-            means = cluster_sums / counts
+            means = cluster_sums[:actual_k] / counts
             means = F.normalize(means, p=2, dim=-1)
 
-            padded_repr[b, :target_k] = means
-            padded_mask[b, :target_k] = 1
+            padded_repr[b, :actual_k] = means
+            padded_mask[b, :actual_k] = 1
 
         return {
             "mv_repr": padded_repr,
@@ -105,22 +106,15 @@ class TokenPooling(BaseModel, BaseEncoder):
         encode_outputs = self.encode(input_ids, attention_mask)
         return self.hierarchical_pooling(encode_outputs)
 
-    @staticmethod
-    def score(qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
-        P = mv_score(qry_repr["mv_repr"], doc_repr["mv_repr"], pairwise)
-        scores = P.max(dim=-1).values.sum(-1)
-
-        if "mv_mask" in qry_repr:
-            scores = scores / qry_repr["mv_mask"].sum(-1, keepdim=True)
-
-        return scores
+    def score(self, qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
+        return registry.get_scorer("maxsim_sum")(qry_repr, doc_repr, pairwise)
 
     def forward(self, Q: tuple[torch.Tensor], D: tuple[torch.Tensor]) -> torch.Tensor:
         Q = self.encode_qry(*Q)
         D = self.encode_doc(*D)
 
         # default to in-negative sampling, so pairwise=False
-        return TokenPooling.score(Q, D, False)
+        return self.score(Q, D, False)
 
     @classmethod
     def from_config(cls, config):

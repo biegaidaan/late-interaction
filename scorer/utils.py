@@ -22,7 +22,3 @@ def mv_score(qry_repr: torch.Tensor, doc_repr: torch.Tensor, pairwise: bool = Fa
     else:  # inbatch negative sampling
         scores = torch.einsum("qik,djk->qdij", qry_repr, doc_repr)  # Q, D, Lq, Ld
     return scores
-
-
-def maxsum(mv_scores: torch.Tensor) -> torch.Tensor:
-    return mv_scores.max(-1).values.sum(-1)

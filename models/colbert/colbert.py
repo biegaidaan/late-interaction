@@ -5,25 +5,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel
 
+import scorer  # register scorer functions
 from common.registry import registry
-from .base_model import BaseModel, BaseEncoder
-from .utils import mv_score
+from models.base_model import BaseModel, BaseEncoder
 
 
-@registry.register_model_name("colbertv2")
-class ColBERTv2(BaseModel, BaseEncoder):
-    def __init__(self, pretrained_model: str, dim: int, temperature: float = 1.0, topk: int = 32) -> None:
+@registry.register_model_name("colbert")
+class ColBERT(BaseModel, BaseEncoder):
+    def __init__(self, pretrained_model: str, dim: int, temperature: float = 1.0) -> None:
         super().__init__()
         self.llm = AutoModel.from_pretrained(pretrained_model)
         self.proj = nn.Linear(self.llm.config.hidden_size, dim)
         self.log_temperature = nn.Parameter(torch.tensor(math.log(temperature)))
-        self.topk = topk
 
         self._init_weights()
 
     @property
     def temperature(self) -> torch.Tensor:
-        return self.log_temperature.exp().clamp(min=0.01, max=0.5)
+        return self.log_temperature.exp().clamp(min=0.01, max=0.1)
 
     def _init_weights(self) -> None:
         nn.init.xavier_uniform_(self.proj.weight)
@@ -47,46 +46,20 @@ class ColBERTv2(BaseModel, BaseEncoder):
     def encode_doc(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> dict[str, torch.Tensor]:
         return self.encode(input_ids, attention_mask)
 
-    @staticmethod
-    def score(qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
-        P = mv_score(qry_repr["mv_repr"], doc_repr["mv_repr"], pairwise)
-        scores = P.max(dim=-1).values.sum(-1)
-
-        if "mv_mask" in qry_repr:
-            scores = scores / qry_repr["mv_mask"].sum(-1, keepdim=True)
-
-        return scores
-
-    @staticmethod
-    def soft_maxsim(qry_repr: dict, doc_repr: dict, temperature: torch.Tensor, topk: int, pairwise: bool = False) -> torch.Tensor:
-        # P: (..., n, m) similarity matrix between query and doc tokens
-        P = mv_score(qry_repr["mv_repr"], doc_repr["mv_repr"], pairwise)
-        # keep only top-k elements per row
-        k = min(topk, P.size(-1))
-        P = P.topk(k, dim=-1).values  # (..., n, k)
-        # soft-max approximation of MaxSim: tau * log(sum_j exp(q_i d_j^T / tau))
-        scores = temperature * torch.logsumexp(P / temperature, dim=-1)  # (..., n)
-        scores = scores.sum(-1)  # (...)
-
-        if "mv_mask" in qry_repr:
-            scores = scores / qry_repr["mv_mask"].sum(-1, keepdim=True)
-
-        return scores
+    def score(self, qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
+        return registry.get_scorer("maxsim_sum")(qry_repr, doc_repr, pairwise)
 
     def forward(self, Q: tuple[torch.Tensor], D: tuple[torch.Tensor]) -> torch.Tensor:
         Q = self.encode_qry(*Q)
         D = self.encode_doc(*D)
 
         # default to in-negative sampling, so pairwise=False
-        # soft-maxsim for training
-        # optional: maxsim for inference
-        return ColBERTv2.soft_maxsim(Q, D, self.temperature, self.topk, False)
+        return self.score(Q, D, False)
 
     @classmethod
     def from_config(cls, config):
         pretrained_model = config.get("pretrained_model", "bert-base-uncased")
         dim = config.get("dim", 128)
         temperature = config.get("temperature", 1.0)
-        topk = config.get("topk", 32)
 
-        return cls(pretrained_model, dim, temperature, topk)
+        return cls(pretrained_model, dim, temperature)

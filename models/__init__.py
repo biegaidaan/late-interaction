@@ -1,6 +1,6 @@
-from .base_model import BaseModel
-from .colbert import ColBERT
-from .colbertv2 import ColBERTv2
-from .msbert import MSBert
-from .constbert import ConstBERT
-from .tokenpooling import TokenPooling
+from .base_model import BaseModel, BaseEncoder
+from .colbert.colbert import ColBERT
+from .colbertv2.colbertv2 import ColBERTv2
+from .msbert.msbert import MSBert
+from .constbert.constbert import ConstBERT
+from .tokenpooling.tokenpooling import TokenPooling

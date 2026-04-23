@@ -5,9 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel
 
+import scorer  # register scorer functions
 from common.registry import registry
-from .base_model import BaseModel, BaseEncoder
-from .utils import mv_score, sv_score
+from models.base_model import BaseModel, BaseEncoder
 
 
 class SpanAttention(nn.Module):
@@ -72,7 +72,6 @@ class MSBert(BaseModel, BaseEncoder):
         temperature: float = 1.0
     ) -> None:
         super().__init__()
-
         self.qry_span_size = qry_span_size
         self.doc_span_size = doc_span_size
 
@@ -133,22 +132,14 @@ class MSBert(BaseModel, BaseEncoder):
     def encode_doc(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> dict[str, torch.Tensor]:
         return self.encode(input_ids, attention_mask, self.doc_span_size)
 
-    @staticmethod
-    def score(qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
-        cls_scores = sv_score(qry_repr["cls_repr"], doc_repr["cls_repr"], pairwise)
-        P = mv_score(qry_repr["mv_repr"], doc_repr["mv_repr"], pairwise)
-        span_scores = P.max(dim=-1).values.sum(-1)
-
-        if "mv_mask" in qry_repr:
-            span_scores = span_scores / qry_repr["mv_mask"].sum(-1, keepdim=True)
-
-        return cls_scores + span_scores
+    def score(self, qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
+        return registry.get_scorer("maxsim_sum")(qry_repr, doc_repr, pairwise)
 
     def forward(self, Q: tuple[torch.Tensor, torch.Tensor], D: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         Q = self.encode_qry(*Q)
         D = self.encode_doc(*D)
 
-        return MSBert.score(Q, D, False)
+        return self.score(Q, D, False)
 
     @classmethod
     def from_config(cls, config):

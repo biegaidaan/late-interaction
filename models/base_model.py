@@ -33,6 +33,5 @@ class BaseEncoder:
     def encode_doc(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> dict[str, torch.Tensor]:
         raise NotImplementedError
 
-    @staticmethod
-    def score(qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
+    def score(self, qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
         raise NotImplementedError

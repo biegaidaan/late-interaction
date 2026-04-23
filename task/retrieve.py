@@ -10,7 +10,7 @@ from encode import StrideTensor
 from common import registry
 
 # Import to trigger @registry.register_* decorators
-from models import *
+import scorer
 
 
 def parse_args():
@@ -54,12 +54,8 @@ def load_encoding(dir_path: str, device: str) -> dict[str, torch.Tensor | Stride
     return Encodings(**encoding)
 
 
-def get_score_func(model_name: str):
-    return registry.get_model_cls(model_name).score
-
-
 def retrieve(
-    model_name: str,
+    score_func_name: str,
     qry_encoding_dir: str,
     doc_encoding_dir: str,
     qry_bsize: int,
@@ -72,7 +68,7 @@ def retrieve(
     Q = load_encoding(qry_encoding_dir, device)
     D = load_encoding(doc_encoding_dir, device)
 
-    score_func = get_score_func(model_name)
+    score_func = registry.get_scorer(score_func_name)
 
     results = {}
     qid = 0

@@ -5,9 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel
 
+import scorer  # register scorer functions
 from common.registry import registry
-from .utils import mv_score
-from .base_model import BaseModel, BaseEncoder
+from models.base_model import BaseModel, BaseEncoder
 
 
 @registry.register_model_name("constbert")
@@ -59,22 +59,15 @@ class ConstBERT(BaseModel, BaseEncoder):
             "mv_mask": mask
         }
 
-    @staticmethod
-    def score(qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
-        P = mv_score(qry_repr["mv_repr"], doc_repr["mv_repr"], pairwise)
-        scores = P.max(dim=-1).values.sum(-1)
-
-        if "mv_mask" in qry_repr:
-            scores = scores / qry_repr["mv_mask"].sum(-1, keepdim=True)
-
-        return scores
+    def score(self, qry_repr: dict, doc_repr: dict, pairwise: bool = False) -> torch.Tensor:
+        return registry.get_scorer("maxsim_sum")(qry_repr, doc_repr, pairwise)
 
     def forward(self, Q: tuple[torch.Tensor], D: tuple[torch.Tensor]) -> torch.Tensor:
         Q = self.encode_qry(*Q)
         D = self.encode_doc(*D)
 
         # default to in-negative sampling, so pairwise=False
-        return ConstBERT.score(Q, D, False)
+        return self.score(Q, D, False)
 
     @classmethod
     def from_config(cls, config):
